@@ -2,6 +2,7 @@ import pandas as pd
 import pprint 
 import string
 import operator
+import numpy as np 
 from nltk.corpus import stopwords
 from nltk.stem.porter import *
 from nltk.stem.snowball import SnowballStemmer
@@ -23,9 +24,19 @@ class Preprocess:
     self.tweets = []
     self.bag_of_words = None
     self.countVectorizer = None
-    self.tfidf_transformer = None
+    self.tfidf_vectorizer = None
     self.tf_idf_scores = None
     self.df = None
+
+  def positive_word(self, tweet):
+    """
+    This feature computes the proportion of positive words in a given tweet. 
+    """
+    positive_words = set(['wow', 'beautiful', 'amazing', 'won', 'want', 'really cool', 'feel better', 'good'])
+    dense = self.tfidf_vectorizer.transform([tweet]).toarray()[0]
+    dense = np.where(dense > 0)[0]
+    terms = set([self.tfidf_vectorizer.get_feature_names()[x] for x in dense])
+    return len(terms.intersection(positive_words))/(len(terms) + 1.0)
 
   def read_data(self):
     """
@@ -85,18 +96,24 @@ class Preprocess:
     self.bag_of_words = self.countVectorizer.fit_transform(self.tweets)                          # Convert each tweet into a vector 
 
     print "\nTop 20 uni grams in the vocabulary_"
-    print sorted(dict((key,value) for key, value in self.countVectorizer.vocabulary_.iteritems() if key.count(' ')==0).items(), key=operator.itemgetter(1), reverse=True)[:20]
-    
+    print sorted(dict((key,value) for key, value in self.countVectorizer.vocabulary_.iteritems() if key.count(' ')==0).items(), key=operator.itemgetter(1), reverse=True)[:100]
     print "\nTop 20 bi-grams in vocbulary "
-    print sorted(dict((key,value) for key, value in self.countVectorizer.vocabulary_.iteritems() if key.count(' ')==1).items(), key=operator.itemgetter(1), reverse=True)[:20]    
-    # Convert the Count Vectorizer Computed above to TF - IDF 
-    self.tfidf_transformer = TfidfTransformer()
-    self.tf_idf_scores = self.tfidf_transformer.fit_transform(self.bag_of_words)
+    print sorted(dict((key,value) for key, value in self.countVectorizer.vocabulary_.iteritems() if key.count(' ')==1).items(), key=operator.itemgetter(1), reverse=True)[:100]    
+    # Convert the Tweets to TF - IDF Representation for understanding importance of individual words  
+    self.tfidf_vectorizer = TfidfVectorizer(decode_error='ignore',\
+                                             stop_words='english', \
+                                             min_df=10, ngram_range=(1, 3)) 
+    self.tf_idf_scores = self.tfidf_vectorizer.fit_transform(self.tweets)
   
     # Convert the tf - idf to pandas dataframe 
-    self.df = pd.DataFrame(self.tf_idf_scores.todense(), columns=self.countVectorizer.vocabulary_)
+    print "\nTf - Idf for each tweet in the dataset"
+    self.df = pd.DataFrame(self.tf_idf_scores.toarray(), columns=self.tfidf_vectorizer.get_feature_names())
     self.df["Input Tweets"] = self.tweets
     print self.df.sample(n=5)
+
+    self.df['Positive Words'] = map(lambda x: self.positive_word(x), self.df['Input Tweets'])
+    print self.df.sample(n=5)
+
 
 if __name__ == "__main__":
   preprocess = Preprocess("sts_gold_tweet.csv")
