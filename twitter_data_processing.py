@@ -38,6 +38,16 @@ class Preprocess:
     terms = set([self.tfidf_vectorizer.get_feature_names()[x] for x in dense])
     return len(terms.intersection(positive_words))/(len(terms) + 1.0)
 
+  def negative_word(self, tweet):
+    """
+    This feature computes the proportion of negative words in a given tweet.
+    """
+    negative_words = set(['wrong', 'worst', 'warned', 'dont like', 'upset', 'ugh', 'bad'])
+    dense = self.tfidf_vectorizer.transform([tweet]).toarray()[0]
+    dense = np.where(dense > 0)[0]
+    terms = set([self.tfidf_vectorizer.get_feature_names()[x] for x in dense])
+    return len(terms.intersection(negative_words))/(len(terms) + 1.0)
+
   def read_data(self):
     """
     Read the Input file and extract the tweets. 
@@ -111,7 +121,12 @@ class Preprocess:
     self.df["Input Tweets"] = self.tweets
     print self.df.sample(n=5)
 
+    # Adding Proportion of positive words as a feature
     self.df['Positive Words'] = map(lambda x: self.positive_word(x), self.df['Input Tweets'])
+    print self.df.sample(n=5)
+   
+    # Adding Proportion of negative words as a feature 
+    self.df['Negative Words'] = map(lambda x: self.negative_word(x), self.df['Input Tweets'])
     print self.df.sample(n=5)
 
 
