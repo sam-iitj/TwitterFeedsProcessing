@@ -11,6 +11,15 @@ from nltk import *
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cross_validation import train_test_split
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn import preprocessing
+from sklearn.linear_model import LogisticRegression
+from nltk.corpus import brown
+from sklearn.metrics import accuracy_score
+from sklearn.naive_bayes import GaussianNB
+from sklearn.naive_bayes import MultinomialNB
+import re
 
 class Preprocess:
   
@@ -22,6 +31,11 @@ class Preprocess:
       bag_of_words - Matrix containing the bag of words representation of tweet messages
       countVectorizer - countVectorizer object which can be used to process new tweet messages. 
       tfidf_vectorizer - tfidf vectorizer which is fitted on the input data, and can be applied to new tweets for preprocessing
+      tf_idf_scores - This matrix will contain the TF - IDF scores for the input tweets 
+      brown_classifier - This object will keep the brown classifier in memory for classifying new messages into four groups 
+      tfidf_brown_vectorizer - This is the tf - idf transformer for input tweet before applying brown classifier 
+      lb - label encoder 
+      df - the final dataframe
     """
     self.filename = filename
     self.tweets = []
@@ -29,7 +43,45 @@ class Preprocess:
     self.countVectorizer = None
     self.tfidf_vectorizer = None
     self.tf_idf_scores = None
+    self.brown_classifier = None
+    self.tfidf_brown_vectorizer = None
+    self.lb = None
     self.df = None
+
+  def build_brown_classifier(self):
+    """
+    This function will build a brown classifier from the brown corpus
+    """
+    print "Traing a model to classify tweet into four categories :- News, reviews, government and humor"
+    news = map(lambda x:' '.join(x), brown.sents(categories='news'))
+    reviews = map(lambda x:' '.join(x), brown.sents(categories='reviews'))
+    government = map(lambda x:' '.join(x), brown.sents(categories='government'))
+    humor = map(lambda x:' '.join(x), brown.sents(categories='humor'))
+    # Generate X and y from this corpuses for building a Logistic regresssion model.  
+    X = news + reviews + government + humor 
+    y = [0 for i in news] + [1 for j in reviews] + [2 for k in government] + [3 for m in humor] 
+    # Converting the sentences to TF - IDF 
+    self.tfidf_brown_vectorizer = TfidfVectorizer(ngram_range=(1, 3), stop_words='english', min_df=10)
+    X = self.tfidf_brown_vectorizer.fit_transform(X)
+    X = X.toarray()
+    print X.shape
+    # Label encoding y since this is a multi class classification problem 
+    self.lb = preprocessing.LabelEncoder()
+    Y = self.lb.fit_transform(y)
+    # Splitting the data into training and test set 
+    X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42, stratify=y)
+    self.brown_classifier = OneVsRestClassifier(MultinomialNB())
+    self.brown_classifier.fit(X_train, y_train)
+    pred = self.brown_classifier.predict(X_test)
+    print "Accuracy on the Test data : ", accuracy_score(y_test, pred)
+
+  def classifying_with_brown(self, tweet):
+    """
+    This function classifies a given tweet into several categories like - news, reviews, government and humor, which i think will be important FreshDesk@Social. 
+    """
+    # Apply Tf - idf vectrorizer for the brown tweet to the input tweet message 
+    new_tweet = self.tfidf_brown_vectorizer.transform(tweet)    
+    return self.lb.inverse_transform(self.brown_classifier.predict(new_tweet.toarray()))[0]
 
   def positive_word(self, tweet):
     """
@@ -81,8 +133,9 @@ class Preprocess:
     """
     with open(self.filename, "r") as f:                                                           # Read the input file. 
       self.tweets.append(f.read())                                                                # Append the tweets to tweets list. 
-    f.close()                                      
-
+    f.close()
+    self.tweets = map(lambda x: re.sub(r'[^\x00-\x7f]',r'', x) , self.tweets)
+ 
   def stem_message(self, text):        
     """
     This function converts the each word of an input message to its base form. 
@@ -107,7 +160,8 @@ class Preprocess:
 
     # Initial preprocessing
     self.tweets = map(lambda x: x.split("\r\n"), self.tweets)                                     # Splitting the tweets into individual tweets
-    self.tweets = map(lambda x: x.split(";")[2], self.tweets[0])                                  # Splitting each tweet with colon and extract the tweet message
+    self.tweets = self.tweets[0][1:]
+    self.tweets = map(lambda x: x.split(";")[2], self.tweets)                                     # Splitting each tweet with colon and extract the tweet message
  
     # Removing punctuation 
     exclude = set(string.punctuation)                                                             # Make a set of punctuation to remove it from tweet
@@ -166,6 +220,14 @@ class Preprocess:
     self.df['Adjective'] = map(lambda x: x['JJ'], pos_feat_)
     print self.df.sample(n=5)
 
+    # Let's build a brown classifier 
+    self.build_brown_classifier()
+    
+    # Adding another features which classifies the tweet into four categories news, reviews, humor and government. 
+    self.df['Category'] = map(lambda x: self.classifying_with_brown(x), self.df['Input Tweets'])
+    print self.df.sample(n=100)
+    print self.df['Category'].value_counts()
+
 if __name__ == "__main__":
-  preprocess = Preprocess("sts_gold_tweet.csv")
-  preprocess.preprocess_data()
+    preprocess = Preprocess("sts_gold_tweet.csv")
+    preprocess.preprocess_data()
